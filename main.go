@@ -36,9 +36,9 @@ type StyleOptions struct {
 
 func main() {
 	// File paths
-	audioOriginal := "assets/audio/任素汐 - 别松手啊 我最好的傻瓜.mp3"
-	audioBacking := "assets/audio/任素汐 - 别松手啊 我最好的傻瓜 (伴奏).mp3"
-	lyricsFile := "assets/lyrics/任素汐 - 别松手啊 我最好的傻瓜.lrc"
+	audioOriginal := "assets/audio/颜人中 - 晚安.mp3"
+	audioBacking := "assets/audio/颜人中 - 晚安 (伴奏).mp3"
+	lyricsFile := "assets/lyrics/颜人中 - 晚安.lrc"
 	fontPath := "assets/fonts/MiSans-Regular.ttf"
 	outputFile := "output/result.mp4"
 
@@ -52,7 +52,7 @@ func main() {
 
 	// User selects start/end lines
 	//selected := askUserSelect(allLyrics)
-	selected := allLyrics[32:40]
+	selected := allLyrics[25:33]
 	if len(selected) < 1 {
 		panic("no lyrics selected")
 	}
