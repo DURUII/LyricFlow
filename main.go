@@ -28,6 +28,7 @@ type StyleOptions struct {
 	BulletColor             string // color of bullet
 	NormalColor             string // lyric text color
 	HighlightColor          string // highlight text color
+	FinishedColor           string
 	CheckboxSelectedColor   string // selected checkbox color
 	CheckboxUnselectedColor string // unselected checkbox color
 	FontPath                string // path to TTF font
@@ -35,10 +36,10 @@ type StyleOptions struct {
 
 func main() {
 	// File paths
-	audioOriginal := "audio/任素汐 - 别松手啊 我最好的傻瓜.mp3"
-	audioBacking := "audio/任素汐 - 别松手啊 我最好的傻瓜 (伴奏).mp3"
-	lyricsFile := "lyrics/任素汐 - 别松手啊 我最好的傻瓜.lrc"
-	fontPath := "fonts/MiSans-Regular.ttf"
+	audioOriginal := "assets/audio/任素汐 - 别松手啊 我最好的傻瓜.mp3"
+	audioBacking := "assets/audio/任素汐 - 别松手啊 我最好的傻瓜 (伴奏).mp3"
+	lyricsFile := "assets/lyrics/任素汐 - 别松手啊 我最好的傻瓜.lrc"
+	fontPath := "assets/fonts/MiSans-Regular.ttf"
 	outputFile := "output/result.mp4"
 
 	ensureDirs()
@@ -51,7 +52,7 @@ func main() {
 
 	// User selects start/end lines
 	//selected := askUserSelect(allLyrics)
-	selected := allLyrics[32:44]
+	selected := allLyrics[32:40]
 	if len(selected) < 1 {
 		panic("no lyrics selected")
 	}
@@ -59,15 +60,16 @@ func main() {
 	// Style & audio options
 	artist := extractMetadataArtist(audioOriginal)
 	opts := StyleOptions{
-		Title:                   extractMetadataTitle(audioOriginal),
+		Title:                   strings.Trim(strings.Split(extractMetadataTitle(audioOriginal), "-")[1], " 》《"),
 		Subtitle:                artist,
 		Bullet:                  selected[0].Text,
 		TitleColor:              "white",
 		SubtitleColor:           "white",
 		BulletColor:             "white",
-		NormalColor:             "gray",
-		HighlightColor:          "yellow",
-		CheckboxSelectedColor:   "yellow",
+		NormalColor:             "#8E8E93",
+		HighlightColor:          "#f4ea2a",
+		FinishedColor:           "white",
+		CheckboxSelectedColor:   "#f4ea2a",
 		CheckboxUnselectedColor: "#8E8E93",
 		FontPath:                fontPath,
 	}
@@ -104,9 +106,9 @@ func main() {
 // ensureDirs creates required directories.
 func ensureDirs() {
 	os.MkdirAll("output", 0755)
-	os.MkdirAll("audio", 0755)
-	os.MkdirAll("lyrics", 0755)
-	os.MkdirAll("fonts", 0755)
+	os.MkdirAll("assets/audio", 0755)
+	os.MkdirAll("assets/lyrics", 0755)
+	os.MkdirAll("assets/fonts", 0755)
 }
 
 // parseLRC reads an .lrc file into LyricLine slices.
@@ -256,7 +258,6 @@ func mergeAudioTracksWithAccompaniment(orig, back string, sel []LyricLine,
 	run(cmd)
 }
 
-// generateLyricsVideoNotesStyle 用 Apple Notes checklist 样式渲染字幕
 func generateLyricsVideoNotesStyle(
 	background string,
 	lyrics []LyricLine,
@@ -264,56 +265,89 @@ func generateLyricsVideoNotesStyle(
 	offset float64,
 	output string,
 ) {
-	var f []string
-
-	// 1）标题（不变）
-	f = append(f, fmt.Sprintf(
-		"drawtext=fontfile=%s:text='%s':fontsize=42:fontcolor=%s:x=(w-text_w)/2:y=100",
-		opts.FontPath, opts.Title, opts.TitleColor))
-
-	// 2）子标题（artist）
-	f = append(f, fmt.Sprintf(
-		"drawtext=fontfile=%s:text='-%s':fontsize=36:fontcolor=%s:x=(w-text_w)/2:y=180",
-		opts.FontPath, opts.Subtitle, opts.SubtitleColor))
-
-	// 3）Bullet 行
-	f = append(f, fmt.Sprintf(
-		"drawtext=fontfile=%s:text='• %s':fontsize=36:fontcolor=%s:x=60:y=260",
-		opts.FontPath, escape(opts.Bullet), opts.BulletColor))
-
-	// 4）Checklist 样式
-	startY, lineH := 340, 72
-	for i, ln := range lyrics {
-		y := startY + i*lineH
-		s := ln.Start - offset
-		e := ln.End - offset
-
-		// ☐ 未开始：灰色
-		f = append(f, fmt.Sprintf(
-			"drawtext=fontfile=%s:text='j':fontsize=36:fontcolor=%s:x=60:y=%d:enable='lt(t,%.2f)'",
-			opts.FontPath, opts.CheckboxUnselectedColor, y, s))
-
-		// ☑ 正在进行：蓝色
-		f = append(f, fmt.Sprintf(
-			"drawtext=fontfile=%s:text='j':fontsize=36:fontcolor=#007AFF:x=60:y=%d:enable='between(t,%.2f,%.2f)'",
-			opts.FontPath, y, s, e))
-
-		// ☑ 已完成：蓝色
-		f = append(f, fmt.Sprintf(
-			"drawtext=fontfile=%s:text='j':fontsize=36:fontcolor=#007AFF:x=60:y=%d:enable='gt(t,%.2f)'",
-			opts.FontPath, y, e))
-
-		// 歌词：48pt 灰色，固定显示
-		f = append(f, fmt.Sprintf(
-			"drawtext=fontfile=%s:text='%s':fontsize=36:fontcolor=%s:x=120:y=%d",
-			opts.FontPath, escape(ln.Text), opts.NormalColor, y+4))
+	var filterParts []string
+	inputs := []string{
+		"-i", background, // 0:v 背景
+		"-i", "assets/img/选择.png", // 1:v 未选中
+		"-i", "assets/img/选择-勾选.png", // 2:v 已勾选
 	}
 
-	cmd := exec.Command("ffmpeg", "-y",
-		"-i", background,
-		"-filter_complex", strings.Join(f, ","),
+	// 起始流
+	current := "[0:v]"
+	baseIdx := 0
+
+	startY, lineH := 340, 72
+
+	// Step 1：添加标题、子标题、Bullet
+	filterParts = append(filterParts, fmt.Sprintf(
+		"%sdrawtext=fontfile=%s:text='%s':fontsize=48:fontcolor=%s:x=(w-text_w)/2:y=100[base%d]",
+		current, opts.FontPath, escape(opts.Title), opts.TitleColor, baseIdx+1))
+	current = fmt.Sprintf("[base%d]", baseIdx+1)
+
+	filterParts = append(filterParts, fmt.Sprintf(
+		"%sdrawtext=fontfile=%s:text='-%s':fontsize=36:fontcolor=%s:x=(w-text_w)/2:y=180[base%d]",
+		current, opts.FontPath, escape(opts.Subtitle), opts.SubtitleColor, baseIdx+2))
+	current = fmt.Sprintf("[base%d]", baseIdx+2)
+
+	filterParts = append(filterParts, fmt.Sprintf(
+		"%sdrawtext=fontfile=%s:text='• %s':fontsize=36:fontcolor=%s:x=60:y=260[base%d]",
+		current, opts.FontPath, escape(opts.Bullet), opts.BulletColor, baseIdx+3))
+	current = fmt.Sprintf("[base%d]", baseIdx+3)
+
+	// Step 2：Checklist每行
+	for i, ln := range lyrics[1:] {
+		y := startY + i*lineH
+		start := ln.Start - offset
+		end := ln.End - offset
+
+		// 缩放未选中图并叠加
+		filterParts = append(filterParts, fmt.Sprintf(
+			"[1:v]scale=40:40[unchecked%d];%s[unchecked%d]overlay=x=60:y=%d:enable='lt(t,%.2f)'[base%d]",
+			i, current, i, y, start, baseIdx+4+i*5,
+		))
+		current = fmt.Sprintf("[base%d]", baseIdx+4+i*5)
+
+		// 缩放已选中图并叠加
+		filterParts = append(filterParts, fmt.Sprintf(
+			"[2:v]scale=40:40[checked%d];%s[checked%d]overlay=x=60:y=%d:enable='gte(t,%.2f)'[base%d]",
+			i, current, i, y, start, baseIdx+5+i*5,
+		))
+		current = fmt.Sprintf("[base%d]", baseIdx+5+i*5)
+
+		// 未唱到（灰色）
+		filterParts = append(filterParts, fmt.Sprintf(
+			"%sdrawtext=fontfile=%s:text='%s':fontsize=36:fontcolor=%s:x=120:y=%d:enable='lt(t,%.2f)'[base%d]",
+			current, opts.FontPath, escape(ln.Text), opts.NormalColor, y+4, start, baseIdx+6+i*5,
+		))
+		current = fmt.Sprintf("[base%d]", baseIdx+6+i*5)
+
+		// 正在唱（高亮色）
+		filterParts = append(filterParts, fmt.Sprintf(
+			"%sdrawtext=fontfile=%s:text='%s':fontsize=36:fontcolor=%s:x=120:y=%d:enable='between(t,%.2f,%.2f)'[base%d]",
+			current, opts.FontPath, escape(ln.Text), opts.HighlightColor, y+4, start, end, baseIdx+7+i*5,
+		))
+		current = fmt.Sprintf("[base%d]", baseIdx+7+i*5)
+
+		// 唱完（白色）
+		filterParts = append(filterParts, fmt.Sprintf(
+			"%sdrawtext=fontfile=%s:text='%s':fontsize=36:fontcolor=%s:x=120:y=%d:enable='gt(t,%.2f)'[base%d]",
+			current, opts.FontPath, escape(ln.Text), opts.FinishedColor, y+4, end, baseIdx+8+i*5,
+		))
+		current = fmt.Sprintf("[base%d]", baseIdx+8+i*5)
+	}
+
+	final := current
+
+	cmdArgs := []string{"-y"}
+	cmdArgs = append(cmdArgs, inputs...)
+	cmdArgs = append(cmdArgs,
+		"-filter_complex", strings.Join(filterParts, ";"),
+		"-map", final,
+		"-c:v", "libx264", "-preset", "fast", "-crf", "18",
 		output,
 	)
+
+	cmd := exec.Command("ffmpeg", cmdArgs...)
 	run(cmd)
 }
 
